@@ -1,0 +1,183 @@
+import praw
+import pandas as pd
+import matplotlib.pyplot as plt
+from datetime import datetime
+import time
+import os
+
+def setup_reddit_client():
+    """Set up and return the Reddit API client"""
+    reddit = praw.Reddit(
+        client_id="sDfdlVCb0hL1oPTsR3HQ",
+        client_secret="WVyMFZnlEejlJxQrNYl270gvMC8TA",
+        user_agent="tren2Agent/1.0 by Affectionate_Owl2204"
+    )
+    
+    # Set to read-only mode
+    reddit.read_only = True
+    return reddit
+
+def fetch_posts(reddit, subreddit_name, limit=25, sort_type="hot"):
+    """Fetch posts from a subreddit
+    
+    Parameters:
+    - reddit: praw.Reddit instance
+    - subreddit_name: Name of the subreddit to scrape
+    - limit: Number of posts to retrieve (max 100)
+    - sort_type: 'hot', 'new', 'top', or 'rising'
+    
+    Returns:
+    - list of post data dictionaries
+    """
+    subreddit = reddit.subreddit(subreddit_name)
+    
+    # Select sorting method
+    if sort_type == "hot":
+        posts = subreddit.hot(limit=limit)
+    elif sort_type == "new":
+        posts = subreddit.new(limit=limit)
+    elif sort_type == "top":
+        posts = subreddit.top(limit=limit)
+    elif sort_type == "rising":
+        posts = subreddit.rising(limit=limit)
+    else:
+        raise ValueError(f"Invalid sort_type: {sort_type}")
+    
+    post_data = []
+    
+    for post in posts:
+        # Create a dictionary with post information
+        post_dict = {
+            "id": post.id,
+            "title": post.title,
+            "score": post.score,
+            "upvote_ratio": post.upvote_ratio,
+            "created_utc": datetime.fromtimestamp(post.created_utc),
+            "num_comments": post.num_comments,
+            "url": post.url,
+            "is_self": post.is_self,
+            "selftext": post.selftext if post.is_self else "",
+            "author": str(post.author),
+            "permalink": post.permalink
+        }
+        
+        # Add post to our list
+        post_data.append(post_dict)
+        
+        # Print post information
+        print(f"🔥 {post.title} [{post.score} upvotes]")
+    
+    return post_data
+
+def analyze_posts(posts):
+    """Perform basic analysis on the posts data"""
+    # Convert to DataFrame for easier analysis
+    df = pd.DataFrame(posts)
+    
+    print("\n--- Basic Statistics ---")
+    print(f"Total posts analyzed: {len(df)}")
+    print(f"Average score: {df['score'].mean():.2f}")
+    print(f"Average comment count: {df['num_comments'].mean():.2f}")
+    print(f"Average upvote ratio: {df['upvote_ratio'].mean():.2f}")
+    
+    # Calculate time-based metrics
+    df['age_hours'] = (datetime.now() - df['created_utc']).dt.total_seconds() / 3600
+    print(f"Average post age (hours): {df['age_hours'].mean():.2f}")
+    
+    # Calculate engagement rate (comments per upvote)
+    df['engagement_rate'] = df['num_comments'] / df['score']
+    print(f"Average engagement rate: {df['engagement_rate'].mean():.2f}")
+    
+    return df
+
+def visualize_data(df, subreddit_name):
+    """Create visualizations of the posts data"""
+    # Create output directory if it doesn't exist
+    os.makedirs("reddit_analysis", exist_ok=True)
+    
+    # Set up the plots
+    plt.figure(figsize=(12, 8))
+    
+    # Plot 1: Upvotes vs. Comments
+    plt.subplot(2, 2, 1)
+    plt.scatter(df['score'], df['num_comments'], alpha=0.7)
+    plt.xlabel('Upvotes')
+    plt.ylabel('Comments')
+    plt.title('Upvotes vs. Comments')
+    
+    # Plot 2: Upvote Distribution
+    plt.subplot(2, 2, 2)
+    plt.hist(df['score'], bins=10, alpha=0.7)
+    plt.xlabel('Upvotes')
+    plt.ylabel('Number of Posts')
+    plt.title('Upvote Distribution')
+    
+    # Plot 3: Comments Distribution
+    plt.subplot(2, 2, 3)
+    plt.hist(df['num_comments'], bins=10, alpha=0.7)
+    plt.xlabel('Comments')
+    plt.ylabel('Number of Posts')
+    plt.title('Comments Distribution')
+    
+    # Plot 4: Upvote Ratio Distribution
+    plt.subplot(2, 2, 4)
+    plt.hist(df['upvote_ratio'], bins=10, alpha=0.7)
+    plt.xlabel('Upvote Ratio')
+    plt.ylabel('Number of Posts')
+    plt.title('Upvote Ratio Distribution')
+    
+    # Adjust layout and save
+    plt.tight_layout()
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    filename = f"reddit_analysis/{subreddit_name}_analysis_{timestamp}.png"
+    plt.savefig(filename)
+    plt.close()
+    
+    print(f"\nVisualization saved to {filename}")
+
+def export_data(df, subreddit_name):
+    """Export the data to CSV"""
+    os.makedirs("reddit_analysis", exist_ok=True)
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    filename = f"reddit_analysis/{subreddit_name}_data_{timestamp}.csv"
+    df.to_csv(filename, index=False)
+    print(f"Data exported to {filename}")
+
+def main():
+    # Set up the subreddit and parameters
+    subreddit_name = "LLMs"  # Change this to analyze different subreddits
+    post_limit = 25  # Number of posts to analyze
+    sort_by = "hot"  # Options: hot, new, top, rising
+    
+    print(f"Analyzing r/{subreddit_name} - {sort_by} posts (limit: {post_limit})")
+    
+    try:
+        # Setup Reddit API client
+        reddit = setup_reddit_client()
+        
+        # Fetch posts
+        print("\nFetching posts...")
+        posts = fetch_posts(reddit, subreddit_name, limit=post_limit, sort_type=sort_by)
+        
+        if not posts:
+            print("No posts found or error fetching posts.")
+            return
+        
+        # Analyze posts
+        print("\nAnalyzing posts...")
+        df = analyze_posts(posts)
+        
+        # Visualize data
+        print("\nCreating visualizations...")
+        visualize_data(df, subreddit_name)
+        
+        # Export data
+        export_data(df, subreddit_name)
+        
+        print("\nAnalysis complete!")
+        
+    except Exception as e:
+        print(f"Error: {e}")
+
+if __name__ == "__main__":
+    main()
